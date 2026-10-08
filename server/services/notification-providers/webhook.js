@@ -9,6 +9,8 @@
  * Anbieter fuer Discord, Slack und alles Weitere zustaendig (#692, #660).
  */
 
+import { createHmac } from 'node:crypto';
+
 import { guardedFetch } from './guarded-fetch.js';
 
 export const WEBHOOK_TEMPLATE_PLACEHOLDERS = Object.freeze(['title', 'body', 'url', 'tag']);
@@ -76,6 +78,30 @@ export const webhookProvider = {
         sentAt: new Date().toISOString(),
       });
 
+    // Sign the request so the receiver can tell an accepted sender from anyone
+    // else on the network. Without this a receiver has nothing but the URL: the
+    // body carries no caller identity, and a shared path is not a secret.
+    //
+    // Header set and key are the "Generic V2" scheme (timestamp-bound HMAC):
+    //   X-Webhook-Timestamp    unix seconds, must be within the receiver's replay window
+    //   X-Webhook-Signature-V2 hex HMAC-SHA256 over "<timestamp>.<body>"
+    // The Bearer header is kept alongside - receivers that only check that keep
+    // working, and the two carry the same key, so one channel setting covers both.
+    //
+    // Signing MUST happen after `body` is final: the signature covers the exact
+    // bytes on the wire, and any later edit invalidates it. The timestamp is
+    // read at send time so every attempt (retries run send() again) gets a fresh
+    // one - a signature minted once and replayed minutes later falls outside a
+    // typical 300s replay window.
+    if (token) {
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const signature = createHmac('sha256', token)
+        .update(`${timestamp}.${body}`, 'utf8')
+        .digest('hex');
+      headers['x-webhook-timestamp'] = timestamp;
+      headers['x-webhook-signature-v2'] = signature;
+    }
+
     const response = await fetchImpl(channel.config.baseUrl, {
       method: 'POST',
       headers,
@@ -86,5 +112,4 @@ export const webhookProvider = {
     return { ok: true, status: response.status };
   },
 };
-
 export default webhookProvider;

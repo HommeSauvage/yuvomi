@@ -373,6 +373,45 @@ test('webhook provider posts a JSON notification with optional bearer auth', asy
   assert.match(body.sentAt, /^\d{4}-\d{2}-\d{2}T/);
 });
 
+test('webhook signs the request so a receiver can verify the sender', async () => {
+  const { webhookProvider } = await import('../server/services/notification-providers/webhook.js');
+  const { createHmac } = await import('node:crypto');
+  const calls = [];
+  const secret = 'shared-route-secret';
+
+  await webhookProvider.send({
+    channel: { config: { baseUrl: 'https://hooks.example.test/yuvomi' }, secrets: { token: secret } },
+    payload: { title: 'Tasks', body: 'Pick up parcel', url: '/tasks', tag: 'reminder-7' },
+    fetchImpl: async (_url, options) => { calls.push(options); return { ok: true, status: 204 }; },
+  });
+
+  const headers = calls[0].headers;
+  assert.equal(headers.authorization, `Bearer ${secret}`);
+  assert.match(headers['x-webhook-timestamp'], /^\d+$/, 'timestamp is unix seconds');
+  assert.match(headers['x-webhook-signature-v2'], /^[0-9a-f]{64}$/);
+
+  // Re-sign the bytes we actually sent, the way the receiver does: if this
+  // mismatches here, it mismatches in production.
+  const expected = createHmac('sha256', secret)
+    .update(`${headers['x-webhook-timestamp']}.${calls[0].body}`, 'utf8')
+    .digest('hex');
+  assert.equal(headers['x-webhook-signature-v2'], expected);
+});
+
+test('webhook without a channel token sends no signature', async () => {
+  const { webhookProvider } = await import('../server/services/notification-providers/webhook.js');
+  const calls = [];
+  await webhookProvider.send({
+    channel: { config: { baseUrl: 'https://hooks.example.test/yuvomi' }, secrets: {} },
+    payload: { title: 'Tasks', body: 'x' },
+    fetchImpl: async (_url, options) => { calls.push(options); return { ok: true, status: 204 }; },
+  });
+  const headers = calls[0].headers;
+  assert.equal(headers.authorization, undefined);
+  assert.equal(headers['x-webhook-signature-v2'], undefined);
+  assert.equal(headers['x-webhook-timestamp'], undefined);
+});
+
 test('webhook payload template shapes the body for services with their own schema (#692)', async () => {
   const { webhookProvider } = await import('../server/services/notification-providers/webhook.js');
   const calls = [];
