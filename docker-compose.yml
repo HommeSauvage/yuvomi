@@ -1,7 +1,16 @@
 services:
   yuvomi:
-    image: ghcr.io/ulsklyc/yuvomi:latest
-    build: .                          # optional: use --build to build locally instead
+    # LOCAL build from this checkout (fork: HommeSauvage/yuvomi), NOT the
+    # upstream GHCR image. The tag is deliberately ours: reusing the
+    # ghcr.io/ulsklyc/... name would let our build overwrite the upstream
+    # image locally, and `docker compose pull` would silently fetch upstream
+    # over our changes. Rollback = set image: ghcr.io/ulsklyc/yuvomi:2.75.0
+    # and drop the build: key below.
+    image: yuvomi:khedam
+    build:
+      context: .
+      args:
+        APP_BUILD_REVISION: ${APP_BUILD_REVISION:-local}
     container_name: yuvomi
     restart: unless-stopped
     ports:

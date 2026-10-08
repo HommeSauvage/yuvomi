@@ -17,10 +17,22 @@ graphify-out
 .shoot*.mjs
 .measure.mjs
 
-# Database files (never include real data in image)
+# Database files (never include real data in image).
+# WARNING: Docker matches these with Go's filepath.Match, where `*` does NOT
+# cross a `/`. The root-level `*.db` below therefore never matches
+# `data/yuvomi.db` - verified by build. Exclude the whole runtime dir.
+data/
 *.db
 *.db-shm
 *.db-wal
+*.db.lock
+
+# Local secrets: API tokens and the bootstrap record (passwords, SESSION_SECRET).
+# Never enter an image - layers are trivially extractable.
+keys/
+*.key
+BOOTSTRAP.md
+
 .nvmrc
 .gitignore
 .dockerignore
