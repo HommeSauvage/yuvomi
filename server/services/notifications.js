@@ -298,7 +298,40 @@ function reminderPayload(reminder, locale, dateFormat) {
     url,
     tag: `reminder-${reminder.id}`,
     priority: 'default',
+    // WAS diese Zeile ausloest. Ohne das muss ein Webhook-Empfaenger raten,
+    // welche Aufgabe gemeint ist: `tag` nennt nur die reminder-Id, und
+    // GET /api/v1/reminders/:id existiert nicht, waehrend /all die Id als
+    // EINGABE verlangt - ein Kreis ohne Ausweg. Ein Empfaenger, der eine
+    // Erinnerung quittieren, aufschieben oder abschliessen will, braucht die
+    // Entitaet; er soll dafuer nicht den Fliesstext parsen duerfen.
+    entity_type: reminder.entity_type ?? null,
+    entity_id: reminder.entity_id ?? null,
+    // Wann die Zeile feuert (naive UTC, wie gespeichert) - der Empfaenger
+    // rechnet daraus den naechsten Snooze aus, ohne eine zweite Anfrage.
+    remind_at: reminder.remind_at ?? null,
+    // Alle zustaendigen Personen, Ids des Haushalts, in Zuweisungsreihenfolge
+    // der Gruppe - leer, wenn niemand zustaendig ist. Aufloesen des Namens ist
+    // Sache des Empfaengers (siehe die Abfrage oben).
+    assigned_to: parseIdList(reminder.assigned_to_ids),
   };
+}
+
+/**
+ * Liest ein `json_group_array`-Ergebnis als Id-Liste.
+ *
+ * `json_group_array` liefert auch ueber NULL-Spalten Strings zurueck, und eine
+ * leere Zuweisung ergibt `[]`, kein NULL - deshalb wird geparst statt roh
+ * durchgereicht: im Body stünde sonst `"[2]"` statt `[2]`.
+ */
+function parseIdList(value) {
+  if (value === null || value === undefined || value === '') return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(Number).filter((n) => Number.isSafeInteger(n) && n > 0);
+  } catch {
+    return [];
+  }
 }
 
 function upsertPendingDelivery(database, { reminderId, provider, channelId = null, targetKey, nowIso }) {
@@ -482,7 +515,7 @@ export async function processDueNotifications({
   }
 
   const dueRows = activeDb.prepare(`
-    SELECT r.id, r.created_by, r.entity_type, r.entity_id, r.assigned_from,
+    SELECT r.id, r.created_by, r.entity_type, r.entity_id, r.assigned_from, r.remind_at,
       -- Sieht JEDER das Ziel dieser Zeile? Davon haengt ab, ob sie in einen
       -- Kanal des ganzen Haushalts darf (siehe die Kanalwahl in der Schleife).
       CASE WHEN ${reminderTargetPublicSql(activeDb, 'r')} THEN 1 ELSE 0 END AS target_public,
@@ -566,7 +599,18 @@ export async function processDueNotifications({
         SELECT u.display_name FROM health_prevention_records pr
         JOIN users u ON u.id = pr.user_id
         WHERE pr.id = r.entity_id
-      ) END AS prevention_subject_name
+      ) END AS prevention_subject_name,
+      -- Wer zustaendig ist (task/event): ALLE Ids als JSON-Array, aus
+      -- task_assignments / event_assignments - dieselbe Quelle wie
+      -- ASSIGNED_USERS_SQL in routes/tasks.js. Bewusst NICHT tasks.assigned_to
+      -- (die Einzelspalte) und bewusst kein JOIN auf users: die Zuweisungs-
+      -- tabellen sind das, was die Liste rendert, und die Test-Fixture fuehrt
+      -- kein display_name (siehe den Kommentar oben).
+      CASE WHEN r.entity_type = 'task'  THEN (
+        SELECT json_group_array(user_id) FROM task_assignments WHERE task_id = r.entity_id)
+        WHEN r.entity_type = 'event' THEN (
+        SELECT json_group_array(user_id) FROM event_assignments WHERE event_id = r.entity_id)
+      END AS assigned_to_ids
     FROM reminders r
     -- Als Zeitpunkt verglichen, nicht als Text (#1364): eine roh gespeicherte
     -- Zeile mit Offset kam sonst um genau diesen Offset zu spaet oder zu frueh.

@@ -708,6 +708,62 @@ test('notification processor fans out and deduplicates reminder deliveries', asy
   assert.deepEqual(calls, { webpush: 1, gotify: 1, ntfy: 1 });
 });
 
+test('a reminder payload names its entity, so a receiver can act on it', async () => {
+  const { createNotificationChannelStore } = await import('../server/services/notification-channels.js');
+  const { processDueNotifications } = await import('../server/services/notifications.js');
+  const db = makeDb();
+  const store = createNotificationChannelStore({ db });
+  store.createChannel({ provider: 'ntfy', name: 'ntfy', enabled: true, config: { baseUrl: 'https://ntfy.test', topic: 'family' }, secrets: {} });
+  db.prepare("INSERT INTO tasks (id, title, created_by) VALUES (1, 'Parcel from the book cafe', 1)").run();
+  db.prepare('INSERT INTO task_assignments (task_id, user_id) VALUES (1, 2)').run();
+  db.prepare("INSERT INTO reminders (id, entity_type, entity_id, remind_at, created_by) VALUES (1, 'task', 1, ?, 1)")
+    .run('2026-06-19T09:59:00.000Z');
+  const payloads = [];
+  const providers = {
+    ntfy: { id: 'ntfy', send: async ({ payload }) => { payloads.push(payload); return { ok: true, status: 200 }; } },
+  };
+  const pushService = { sendPushToUser: async () => 0 };
+
+  await processDueNotifications({ database: db, channelStore: store, pushService, providers, now: new Date() });
+
+  assert.equal(payloads.length, 1);
+  const payload = payloads[0];
+  // `tag` nennt nur die reminder-Id, und GET /reminders/:id gibt es nicht -
+  // ohne diese vier Felder muesste ein Webhook-Empfaenger den Fliesstext
+  // parsen, um zu erkennen, WAS faellig ist.
+  assert.equal(payload.entity_type, 'task');
+  assert.equal(payload.entity_id, 1);
+  assert.equal(payload.remind_at, '2026-06-19T09:59:00.000Z');
+  assert.deepEqual(payload.assigned_to, [2]);
+  assert.equal(payload.body, 'Parcel from the book cafe');
+});
+
+test('a reminder payload without assignees carries an empty list, not a string', async () => {
+  const { createNotificationChannelStore } = await import('../server/services/notification-channels.js');
+  const { processDueNotifications } = await import('../server/services/notifications.js');
+  const db = makeDb();
+  const store = createNotificationChannelStore({ db });
+  store.createChannel({ provider: 'ntfy', name: 'ntfy', enabled: true, config: { baseUrl: 'https://ntfy.test', topic: 'family' }, secrets: {} });
+  // Kein task_assignments-Eintrag: json_group_array ueber leeren Mengen
+  // liefert `[]` (String), nicht NULL - roh durchgereicht stünde `"[..]"` im Body.
+  db.prepare("INSERT INTO tasks (id, title, created_by) VALUES (1, 'Unassigned', 1)").run();
+  db.prepare("INSERT INTO reminders (id, entity_type, entity_id, remind_at, created_by) VALUES (1, 'task', 1, ?, 1)")
+    .run('2026-06-19T09:59:00.000Z');
+  const payloads = [];
+  const providers = {
+    ntfy: { id: 'ntfy', send: async ({ payload }) => { payloads.push(payload); return { ok: true, status: 200 }; } },
+  };
+  const pushService = { sendPushToUser: async () => 0 };
+
+  await processDueNotifications({ database: db, channelStore: store, pushService, providers, now: new Date() });
+
+  assert.equal(payloads.length, 1);
+  assert.deepEqual(payloads[0].assigned_to, []);
+  // `assigned_to` ist immer ein Array - nie ein roher `json_group_array`-String,
+  // und nie NULL, auch wenn niemand zustaendig ist.
+  assert.equal(typeof payloads[0].assigned_to, 'object');
+});
+
 test('subscription reminders carry name, amount and renewal date as body (#581)', async () => {
   const { createNotificationChannelStore } = await import('../server/services/notification-channels.js');
   const { processDueNotifications } = await import('../server/services/notifications.js');
