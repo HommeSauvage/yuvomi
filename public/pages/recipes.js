@@ -5,7 +5,7 @@
 
 import { api } from '/api.js';
 import { t, formatDate, formatDateInput, parseDateInput, isDateInputValid } from '/i18n.js';
-import { esc, REQUIRED_MARK } from '/utils/html.js';
+import { esc, REQUIRED_MARK, renderMarkdownLight } from '/utils/html.js';
 import { openModal as openSharedModal, closeModal as closeSharedModal, advancedSection, wireBlurValidation, reportFieldError, refocusAfterRender } from '/components/modal.js';
 import { DEFAULT_CATEGORY_NAME, categoryLabel } from '/utils/shopping-categories.js';
 import { renderKitchenTabsBar } from '/utils/kitchen-tabs.js';
@@ -1077,9 +1077,14 @@ function fillRecipeDetail(detail, recipe) {
 
   if (recipe.notes) {
     const section = detailSectionEl(t('recipes.notesLabel'));
-    const notes = document.createElement('p');
+    // NOT textContent: die Notizen tragen dieselbe Markdown-Teilmenge wie die
+    // Haushalts-Notizen (renderMarkdownLight, utils/html.js) - Ueberschriften,
+    // Listen, **fett**, und seit dieser Fassung ![alt](url) fuer Schrittbilder.
+    // insertAdjacentHTML, nicht innerHTML (Frontend-Audit verbietet Letzteres);
+    // der Renderer selbst escapet jeden Nutzertext.
+    const notes = document.createElement('div');
     notes.className = 'recipe-detail__notes';
-    notes.textContent = recipe.notes;
+    notes.insertAdjacentHTML('beforeend', renderMarkdownLight(recipe.notes));
     section.appendChild(notes);
     detail.appendChild(section);
   }

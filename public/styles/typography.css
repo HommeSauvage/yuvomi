@@ -390,6 +390,18 @@
   margin: 0 0 var(--space-2);
 }
 
+/* Ein Bild im Notiz-/Rezepttext (renderer: utils/html.js, inlineMarkdown).
+ * Block, weil es meist am Zeilenende nach dem Text steht und die Zeile nicht
+ * mitreißen soll; hoeheautomatisch, damit klein geladene Schrittfotos nicht
+ * verzerrn. max-width greift gegen die Breite der Spalte, in der es steht. */
+.note-md-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: var(--space-2) 0;
+  border-radius: var(--radius-md);
+}
+
 .note-md-h1,
 .note-md-h2,
 .note-md-h3 {

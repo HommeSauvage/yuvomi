@@ -536,7 +536,11 @@ button.recipe-detail__ingredient-match:hover {
   margin: 0;
   font-size: var(--type-body);
   color: var(--color-text-secondary);
-  white-space: pre-wrap;
+  /* Die Notizen rendern seit dem Markdown-Umbau ueber renderMarkdownLight();
+   * DER setzt Umbrueche selbst (<br> zwischen den Zeilen eines Absatzes,
+   * eigene <p>-Bloecke bei Leerzeilen). pre-wrap wuerde diese Ausgabe ein
+   * zweites Mal brechen und doppelte Leerraeume stehen lassen. */
+  white-space: normal;
 }
 
 /* Die beiden Kreislauf-Ausgänge, beschriftet. Umbruchfähig, weil bei 320px drei

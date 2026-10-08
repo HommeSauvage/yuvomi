@@ -37,7 +37,8 @@ export const REQUIRED_MARK = '<span class="required-marker" aria-hidden="true"> 
  * Wendet Inline-Markdown auf ein bereits zeilenweise zerlegtes Segment an.
  * Escapet zuerst vollständig (XSS), führt danach nur vertrauenswürdige Tags ein.
  * Unterstützt: <u>Unterstreichung</u> (vom Editor als Literal eingefügt),
- * `Code`, [Text](url) (nur http/https/mailto), **fett**, ~~durchgestrichen~~, *kursiv*.
+ * `Code`, [Text](url) (nur http/https/mailto), ![alt](url) für Bilder,
+ * **fett**, ~~durchgestrichen~~, *kursiv*.
  *
  * @param {string} segment
  * @returns {string} HTML-sicheres Inline-Fragment
@@ -48,6 +49,17 @@ function inlineMarkdown(segment) {
   out = out.replace(/&lt;u&gt;/g, '<u>').replace(/&lt;\/u&gt;/g, '</u>');
   // Inline-Code zuerst, damit Marker darin nicht als Emphase interpretiert werden
   out = out.replace(/`([^`]+?)`/g, '<code class="note-md-code">$1</code>');
+  // Bilder VOR der Linkregel: jene frisst sonst das [alt](url) und das
+  // fuehrende Ausrufezeichen bliebe als Literal stehen. Die Quellenliste ist
+  // enger als bei Links um zwei Eintraege, die ein Skript duerfen wuerden:
+  // `data:text/html` und `javascript:` passen das hier NICHT, ebenso wenig
+  // `//fremd.de` (netzweiter Pfad ohne Ursprung). Erlaubt sind dieselben
+  // Netzquellen wie Links, root-relative Pfade (dasselbe Ursprung, hinter
+  // requireAuth) und data:image.
+  out = out.replace(/!\[([^\]]*?)\]\(([^)\s]+?)\)/g, (whole, alt, url) => {
+    if (!/^(https?:\/\/|\/(?!\/)|data:image\/)/i.test(url)) return whole;
+    return `<img class="note-md-img" src="${url}" alt="${alt}" loading="lazy">`;
+  });
   // Links: nur sichere Schemata, sonst als Literal belassen. url ist bereits escaped.
   out = out.replace(/\[([^\]]+?)\]\(([^)\s]+?)\)/g, (whole, label, url) => {
     if (!/^(https?:\/\/|mailto:)/i.test(url)) return whole;

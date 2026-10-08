@@ -259,6 +259,11 @@ app.get('/sw.js', (_req, res) => {
 });
 
 const PUBLIC_DIR = path.join(import.meta.dirname, '..', 'public');
+// Schrittbilder zu Rezepten: der Markdown-Renderer (public/utils/html.js)
+// liest in Notizen nur URLs, und die muessen fuer eingeloggte Haushalts-
+// mitglieder laden. Der Ordner liegt NICHT in public/ - express.static dort
+// liefert ohne Anmeldung, und Haushaltsbilder sollen hinter dem Login bleiben.
+const RECIPE_IMAGES_DIR = path.join(import.meta.dirname, '..', 'recipe-images');
 
 /**
  * Header jeder Datei aus public/ - EINE Funktion fuer beide Wege, auf denen sie
@@ -703,6 +708,12 @@ app.use('/api/v1/tasks', tasksRouter);
 app.use('/api/v1/shopping', shoppingRouter);
 app.use('/api/v1/meals', mealsRouter);
 app.use('/api/v1/recipes', recipesRouter);
+// Schrittbilder, die Notizen in Rezepten referenzieren (Markdown `![alt](url)`).
+// Der Standort ist die Entscheidung: HINTER requireAuth und allen Gates darunter
+// (Split-Expense-Gast, Token-Scope, Modul-Rechte), damit nur eine echte
+// Haushaltssitzung sie sieht - ein Gast- oder gescoptes Token bekommt sie
+// nicht, und ausserhalb /api/ stehend koennte es ohnehin keiner abrufen.
+app.use('/api/v1/recipe-images', express.static(RECIPE_IMAGES_DIR, { dotfiles: 'deny', index: false }));
 app.use('/api/v1/recipe-providers', recipeProvidersRouter);
 app.use('/api/v1/pantry', pantryRouter);
 app.use('/api/v1/inventory', inventoryRouter);
