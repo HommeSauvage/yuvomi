@@ -118,6 +118,16 @@ export function buildRouter({
         url: '/settings/personal/notifications',
         tag: `notification-channel-test-${id}`,
         priority: 'default',
+        // Same shape a real reminder produces, so a test validates the payload
+        // TEMPLATE too. Without these the receiver sees the literal placeholders
+        // (`{notification.entity_type} #...`) and cannot tell a broken template
+        // from a test that simply carries no entity. `remind_at` matches the
+        // storage format (no milliseconds, no Z) - a test that rendered a
+        // different shape than production would prove nothing.
+        entity_type: 'test',
+        entity_id: id,
+        remind_at: new Date().toISOString().slice(0, 19),
+        assigned_to: [],
       };
       const result = await notificationService.testChannel({ channel, payload });
       store.markChannelTestResult(id, { ok: true });
